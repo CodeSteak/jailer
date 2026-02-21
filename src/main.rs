@@ -4,7 +4,6 @@ use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
-use clap::Parser;
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
 use nix::mount::{MsFlags, mount};
@@ -12,26 +11,39 @@ use nix::sched::{CloneFlags, unshare};
 use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{ForkResult, chroot, execvp, fork, getgid, getuid};
 
-#[derive(Parser, Debug)]
-#[command(name = "jj", about = "Run commands inside an Alpine Linux jail")]
-struct Args {
-    /// Name of the jail (also the default command to run inside it)
-    jailname: String,
-
-    /// Command to run inside the jail (default: jailname). Provide after `--`.
-    #[arg(last = true)]
-    command: Vec<String>,
-}
-
 fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
-    let command = if args.command.is_empty() {
-        vec![args.jailname.clone()]
+    let argv: Vec<String> = std::env::args().collect();
+
+    // Print help and exit
+    if argv.len() < 2 || argv[1] == "--help" || argv[1] == "-h" {
+        eprintln!("Usage: jj <jailname> [extra-args...]");
+        eprintln!("       jj <jailname> -- <command> [args...]");
+        eprintln!();
+        eprintln!("  jj claude                              run 'claude' inside the claude jail");
+        eprintln!("  jj claude --dangerously-skip-permissions  run 'claude --dangerously-skip-permissions'");
+        eprintln!("  jj claude -- sh                        run 'sh' inside the claude jail");
+        eprintln!();
+        eprintln!("Jails are stored in ~/.jails/<jailname>/ (Alpine Linux minirootfs).");
+        eprintln!("Current directory is mounted as /data inside the jail.");
+        std::process::exit(0);
+    }
+
+    let jailname = &argv[1];
+    let rest = &argv[2..];
+
+    // Split on "--": everything after it is an explicit command override.
+    // Without "--", trailing args are extra flags appended to the jailname command.
+    let command: Vec<String> = if let Some(pos) = rest.iter().position(|a| a == "--") {
+        rest[pos + 1..].to_vec()
+    } else if rest.is_empty() {
+        vec![jailname.clone()]
     } else {
-        args.command.clone()
+        let mut cmd = vec![jailname.clone()];
+        cmd.extend_from_slice(rest);
+        cmd
     };
 
-    let root = setup_jail(&args.jailname)?;
+    let root = setup_jail(jailname)?;
     run_jail(&root, &command)
 }
 

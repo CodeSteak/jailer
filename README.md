@@ -2,7 +2,7 @@
 
 Run commands inside a persistent, isolated Alpine Linux environment. No root. No Docker. No config files.
 
-> **Vibecoded** — built in one session with Claude Code.
+> **Vibecoded** — built in one session with Claude Code. Use at your own risk.
 
 ---
 
@@ -63,7 +63,7 @@ jj <jailname> [-- <command> [args...]]
 ### Run Claude Code with full autonomy, safely
 
 ```sh
-jj claude -- claude --dangerously-skip-permissions
+jj claude --dangerously-skip-permissions
 ```
 
 Creates the `claude` jail on first run (downloads Alpine), then launches Claude Code inside it. Your current project directory is at `/data`. Claude can trash the Alpine system all it wants — your home dir is safe.
@@ -136,11 +136,11 @@ cd ~/projects/myapp
 jj claude -- sh -c "apk add nodejs npm && npm install -g @anthropic/claude-code"
 
 # Every subsequent time: instant startup
-jj claude -- claude --dangerously-skip-permissions
+jj claude --dangerously-skip-permissions
 ```
 
 Or put it in a shell alias:
 
 ```sh
-alias claude-safe='jj claude -- claude --dangerously-skip-permissions'
+alias claude-safe='jj claude --dangerously-skip-permissions'
 ```
