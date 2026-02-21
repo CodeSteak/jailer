@@ -10,30 +10,16 @@ depends=()
 makedepends=('cargo')
 provides=('jj-jailer')
 conflicts=()
-source=("$pkgname-$pkgver.tar.gz::https://github.com/CodeSteak/jailer/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
-
-prepare() {
-    cd "jj-$pkgver"
-    export RUSTUP_TOOLCHAIN=stable
-    cargo fetch --locked --target "$CARCH-unknown-linux-gnu"
-}
+source=()
+sha256sums=()
 
 build() {
-    cd "jj-$pkgver"
+    cd "$startdir"
     export RUSTUP_TOOLCHAIN=stable
-    export CARGO_TARGET_DIR=target
-    cargo build --frozen --release --all-features
-}
-
-check() {
-    cd "jj-$pkgver"
-    export RUSTUP_TOOLCHAIN=stable
-    cargo test --frozen --all-features
+    cargo build --release
 }
 
 package() {
-    cd "jj-$pkgver"
-    install -Dm755 target/release/jj "$pkgdir/usr/bin/jj"
-    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm755 "$startdir/target/release/jj" "$pkgdir/usr/bin/jj"
+    install -Dm644 "$startdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
 }
