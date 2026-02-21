@@ -1,0 +1,18 @@
+[package]
+name = "jailer"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "jailer"
+path = "src/main.rs"
+
+[dependencies]
+clap      = { version = "4", features = ["derive"] }
+anyhow    = "1"
+reqwest   = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "stream"] }
+flate2    = "1"
+tar       = "0.4"
+dirs      = "5"
+indicatif = "0.17"
+nix       = { version = "0.30", features = ["sched", "mount", "user", "fs", "signal"] }
