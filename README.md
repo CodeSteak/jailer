@@ -33,8 +33,8 @@ On first run it downloads the Alpine Linux minirootfs (~4 MB) from the official 
 ### From source
 
 ```sh
-git clone https://github.com/youruser/jj
-cd jj
+git clone https://github.com/CodeSteak/jailer
+cd jailer
 cargo build --release
 cp target/release/jj ~/.local/bin/
 ```
@@ -42,8 +42,8 @@ cp target/release/jj ~/.local/bin/
 ### Arch Linux (AUR / makepkg)
 
 ```sh
-git clone https://github.com/youruser/jj
-cd jj
+git clone https://github.com/CodeSteak/jailer
+cd jailer
 makepkg -si
 ```
 
@@ -57,7 +57,8 @@ makepkg -si
 ## Usage
 
 ```
-jj <jailname> [-- <command> [args...]]
+jj <jailname> [extra-args...]
+jj <jailname> -- <command> [args...]
 ```
 
 ### Run Claude Code with full autonomy, safely
@@ -83,7 +84,7 @@ jj claude -- node server.js
 
 ### Use the jailname as the command
 
-If no command is given after `--`, `jj` runs a binary with the same name as the jail:
+If no arguments are given, `jj` runs a binary with the same name as the jail:
 
 ```sh
 jj claude   # equivalent to: jj claude -- claude

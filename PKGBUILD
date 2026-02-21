@@ -4,13 +4,13 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc='Run commands inside a persistent Alpine Linux jail using Linux namespaces (no root, no Docker)'
 arch=('x86_64' 'aarch64')
-url='https://github.com/youruser/jj'
+url='https://github.com/CodeSteak/jailer'
 license=('MIT')
 depends=()
 makedepends=('cargo')
 provides=('jj-jailer')
 conflicts=()
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::https://github.com/CodeSteak/jailer/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 prepare() {
