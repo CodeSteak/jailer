@@ -134,7 +134,9 @@ The jail appears as `uid=0 (root)` inside, mapped to your real UID outside. No r
 cd ~/projects/myapp
 
 # First time: creates the jail and installs Claude
-ja claude -- sh -c "apk add nodejs npm && npm install -g @anthropic/claude-code"
+ja claude -- sh -c "apk add curl nodejs npm bash"
+ja claude -- sh -c "curl -fsSL https://claude.ai/install.sh | bash"
+
 
 # Every subsequent time: instant startup
 ja claude --dangerously-skip-permissions

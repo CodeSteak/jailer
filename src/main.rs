@@ -371,16 +371,18 @@ fn jail_child(root: &Path, cwd: &Path, command: &[String]) -> anyhow::Result<()>
     )
     .context("Failed to bind-mount current directory as /data")?;
 
-    // 9. Bind-mount host /etc/resolv.conf for live DNS
-    if Path::new("/etc/resolv.conf").exists() {
-        mount(
-            Some("/etc/resolv.conf"),
-            &root.join("etc/resolv.conf"),
-            None::<&str>,
-            MsFlags::MS_BIND,
-            None::<&str>,
-        )
-        .unwrap_or_else(|e| eprintln!("warning: resolv.conf: {}", e));
+    // 9. Write resolv.conf for DNS.
+    //    We copy the host file and append a public fallback nameserver because
+    //    Alpine's curl uses c-ares, which can time out on some local resolvers
+    //    (e.g. router DNS) inside namespaces.
+    {
+        let resolv = root.join("etc/resolv.conf");
+        let mut contents = fs::read_to_string("/etc/resolv.conf").unwrap_or_default();
+        if !contents.contains("1.1.1.1") && !contents.contains("8.8.8.8") {
+            contents.push_str("\nnameserver 1.1.1.1\n");
+        }
+        fs::write(&resolv, contents)
+            .unwrap_or_else(|e| eprintln!("warning: resolv.conf: {}", e));
     }
 
     // 10. chroot into the jail
