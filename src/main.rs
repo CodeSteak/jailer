@@ -397,7 +397,7 @@ fn jail_child(root: &Path, cwd: &Path, command: &[String]) -> anyhow::Result<()>
     std::env::set_var("HOME", "/root");
     std::env::set_var(
         "PATH",
-        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "/root/.local/bin:/root/bin:/root/.cargo/bin:/root/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     );
     if let Some(term) = term {
         std::env::set_var("TERM", term);
