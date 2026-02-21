@@ -22,4 +22,6 @@ build() {
 package() {
     install -Dm755 "$startdir/target/release/ja" "$pkgdir/usr/bin/ja"
     install -Dm644 "$startdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 "$startdir/completions/ja.fish" "$pkgdir/usr/share/fish/vendor_completions.d/ja.fish"
+    install -Dm644 "$startdir/completions/_ja" "$pkgdir/usr/share/zsh/site-functions/_ja"
 }

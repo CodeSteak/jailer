@@ -1,0 +1,29 @@
+#compdef ja
+
+# Zsh completions for ja (jailer)
+
+_ja_jails() {
+  local -a jails
+  if [[ -d ~/.jails ]]; then
+    jails=( ~/.jails/*(/:t) )
+  fi
+  compadd -a jails
+}
+
+_ja() {
+  local curcontext="$curcontext" state
+
+  # After --, complete commands normally
+  local idx=${words[(i)--]}
+  if (( idx < CURRENT )); then
+    _normal
+    return
+  fi
+
+  _arguments -s \
+    '(-h --help)'{-h,--help}'[Show help]' \
+    '1:jail name:_ja_jails' \
+    '*:extra args:'
+}
+
+_ja "$@"
