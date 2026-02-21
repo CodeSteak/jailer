@@ -399,6 +399,7 @@ fn jail_child(root: &Path, cwd: &Path, command: &[String]) -> anyhow::Result<()>
         "PATH",
         "/root/.local/bin:/root/bin:/root/.cargo/bin:/root/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     );
+    std::env::set_var("IS_SANDBOX", "1");
     if let Some(term) = term {
         std::env::set_var("TERM", term);
     }
