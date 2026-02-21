@@ -1,4 +1,4 @@
-# jj — Alpine Linux jails for your terminal
+# ja — Alpine Linux jails for your terminal
 
 Run commands inside a persistent, isolated Alpine Linux environment. No root. No Docker. No config files.
 
@@ -8,7 +8,7 @@ Run commands inside a persistent, isolated Alpine Linux environment. No root. No
 
 ## Motivation
 
-AI coding assistants like [Claude Code](https://claude.ai/claude-code) are powerful, but running them with `--dangerously-skip-permissions` on your real home directory is a leap of faith. `jj` wraps any command in an Alpine Linux sandbox where the tool can do whatever it wants — to Alpine's filesystem — while your real machine stays untouched.
+AI coding assistants like [Claude Code](https://claude.ai/claude-code) are powerful, but running them with `--dangerously-skip-permissions` on your real home directory is a leap of faith. `ja` wraps any command in an Alpine Linux sandbox where the tool can do whatever it wants — to Alpine's filesystem — while your real machine stays untouched.
 
 The current directory is always mounted as `/data` inside the jail, so the assistant still sees and edits your project files. Everything else is isolated.
 
@@ -22,7 +22,7 @@ your project dir  ─────── mounted read/write at /data
 
 ## How it works
 
-`jj` uses Linux user namespaces + mount namespaces + PID namespaces — the same kernel primitives that power containers — implemented directly in Rust with no external tools (no `bwrap`, no `runc`, no `docker`). It doesn't require root.
+`ja` uses Linux user namespaces + mount namespaces + PID namespaces — the same kernel primitives that power containers — implemented directly in Rust with no external tools (no `bwrap`, no `runc`, no `docker`). It doesn't require root.
 
 On first run it downloads the Alpine Linux minirootfs (~4 MB) from the official CDN and extracts it to `~/.jails/<name>/`. Subsequent runs start in milliseconds.
 
@@ -36,7 +36,7 @@ On first run it downloads the Alpine Linux minirootfs (~4 MB) from the official 
 git clone https://github.com/CodeSteak/jailer
 cd jailer
 cargo build --release
-cp target/release/jj ~/.local/bin/
+cp target/release/ja ~/.local/bin/
 ```
 
 ### Arch Linux (AUR / makepkg)
@@ -57,14 +57,14 @@ makepkg -si
 ## Usage
 
 ```
-jj <jailname> [extra-args...]
-jj <jailname> -- <command> [args...]
+ja <jailname> [extra-args...]
+ja <jailname> -- <command> [args...]
 ```
 
 ### Run Claude Code with full autonomy, safely
 
 ```sh
-jj claude --dangerously-skip-permissions
+ja claude --dangerously-skip-permissions
 ```
 
 Creates the `claude` jail on first run (downloads Alpine), then launches Claude Code inside it. Your current project directory is at `/data`. Claude can trash the Alpine system all it wants — your home dir is safe.
@@ -72,28 +72,28 @@ Creates the `claude` jail on first run (downloads Alpine), then launches Claude 
 ### Open a shell in the jail
 
 ```sh
-jj claude -- sh
+ja claude -- sh
 ```
 
 ### Run any command
 
 ```sh
-jj claude -- apk add git nodejs npm
-jj claude -- node server.js
+ja claude -- apk add git nodejs npm
+ja claude -- node server.js
 ```
 
 ### Use the jailname as the command
 
-If no arguments are given, `jj` runs a binary with the same name as the jail:
+If no arguments are given, `ja` runs a binary with the same name as the jail:
 
 ```sh
-jj claude   # equivalent to: jj claude -- claude
+ja claude   # equivalent to: ja claude -- claude
 ```
 
-If that binary isn't installed yet, `jj` drops you into `sh` with a message:
+If that binary isn't installed yet, `ja` drops you into `sh` with a message:
 
 ```
-jj: 'claude' not found, falling back to sh
+ja: 'claude' not found, falling back to sh
 ```
 
 ### Jails are persistent
@@ -109,8 +109,8 @@ jj: 'claude' not found, falling back to sh
 Install packages once, they stay:
 
 ```sh
-jj claude -- apk add curl jq
-jj claude -- curl https://example.com   # curl is still there next run
+ja claude -- apk add curl jq
+ja claude -- curl https://example.com   # curl is still there next run
 ```
 
 ---
@@ -134,14 +134,14 @@ The jail appears as `uid=0 (root)` inside, mapped to your real UID outside. No r
 cd ~/projects/myapp
 
 # First time: creates the jail and installs Claude
-jj claude -- sh -c "apk add nodejs npm && npm install -g @anthropic/claude-code"
+ja claude -- sh -c "apk add nodejs npm && npm install -g @anthropic/claude-code"
 
 # Every subsequent time: instant startup
-jj claude --dangerously-skip-permissions
+ja claude --dangerously-skip-permissions
 ```
 
 Or put it in a shell alias:
 
 ```sh
-alias claude-safe='jj claude --dangerously-skip-permissions'
+alias claude-safe='ja claude --dangerously-skip-permissions'
 ```

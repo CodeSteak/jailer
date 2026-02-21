@@ -1,27 +1,30 @@
 use std::ffi::CString;
 use std::fs;
-use std::io::Write as IoWrite;
+use std::io::{Read as IoRead, Write as IoWrite};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, bail};
+use anyhow::{bail, Context};
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
-use nix::mount::{MsFlags, mount};
-use nix::sched::{CloneFlags, unshare};
-use nix::sys::wait::{WaitStatus, waitpid};
-use nix::unistd::{ForkResult, chroot, execvp, fork, getgid, getuid};
+use nix::mount::{mount, MsFlags};
+use nix::sched::{unshare, CloneFlags};
+use nix::sys::wait::{waitpid, WaitStatus};
+use nix::unistd::{chroot, execvp, fork, getgid, getuid, ForkResult};
+use sha2::{Digest, Sha256};
 
 fn main() -> anyhow::Result<()> {
     let argv: Vec<String> = std::env::args().collect();
 
     // Print help and exit
     if argv.len() < 2 || argv[1] == "--help" || argv[1] == "-h" {
-        eprintln!("Usage: jj <jailname> [extra-args...]");
-        eprintln!("       jj <jailname> -- <command> [args...]");
+        eprintln!("Usage: ja <jailname> [extra-args...]");
+        eprintln!("       ja <jailname> -- <command> [args...]");
         eprintln!();
-        eprintln!("  jj claude                              run 'claude' inside the claude jail");
-        eprintln!("  jj claude --dangerously-skip-permissions  run 'claude --dangerously-skip-permissions'");
-        eprintln!("  jj claude -- sh                        run 'sh' inside the claude jail");
+        eprintln!(
+            "  ja claude                                 run 'claude' inside the claude jail"
+        );
+        eprintln!("  ja claude --dangerously-skip-permissions  run 'claude --dangerously-skip-permissions'");
+        eprintln!("  ja claude -- sh                           run 'sh' inside the claude jail");
         eprintln!();
         eprintln!("Jails are stored in ~/.jails/<jailname>/ (Alpine Linux minirootfs).");
         eprintln!("Current directory is mounted as /data inside the jail.");
@@ -29,6 +32,16 @@ fn main() -> anyhow::Result<()> {
     }
 
     let jailname = &argv[1];
+    if jailname.is_empty()
+        || !jailname
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        bail!(
+            "Invalid jail name '{}': must be non-empty and contain only [a-zA-Z0-9_-]",
+            jailname
+        );
+    }
     let rest = &argv[2..];
 
     // Split on "--": everything after it is an explicit command override.
@@ -51,13 +64,13 @@ fn main() -> anyhow::Result<()> {
 
 fn alpine_arch(rust_arch: &str) -> anyhow::Result<&'static str> {
     match rust_arch {
-        "x86_64"    => Ok("x86_64"),
-        "x86"       => Ok("x86"),
-        "aarch64"   => Ok("aarch64"),
-        "arm"       => Ok("armhf"),
-        "riscv64"   => Ok("riscv64"),
+        "x86_64" => Ok("x86_64"),
+        "x86" => Ok("x86"),
+        "aarch64" => Ok("aarch64"),
+        "arm" => Ok("armhf"),
+        "riscv64" => Ok("riscv64"),
         "powerpc64" => Ok("ppc64le"),
-        "s390x"     => Ok("s390x"),
+        "s390x" => Ok("s390x"),
         other => bail!(
             "Architecture '{}' is not supported by Alpine Linux. \
              Supported: x86_64, x86, aarch64, armhf, riscv64, ppc64le, s390x",
@@ -66,7 +79,8 @@ fn alpine_arch(rust_arch: &str) -> anyhow::Result<&'static str> {
     }
 }
 
-fn fetch_minirootfs_filename(arch: &str) -> anyhow::Result<String> {
+/// Returns (filename, sha256) for the alpine-minirootfs release.
+fn fetch_minirootfs_info(arch: &str) -> anyhow::Result<(String, String)> {
     let url = format!(
         "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/{}/latest-releases.yaml",
         arch
@@ -81,16 +95,30 @@ fn fetch_minirootfs_filename(arch: &str) -> anyhow::Result<String> {
 
     // Parse YAML with simple string search — the format is predictable.
     // We look for a block containing `flavor: alpine-minirootfs` and then
-    // find the `file:` key in that same block (within the next 10 lines).
+    // find the `file:` and `sha256:` keys within the same YAML list entry
+    // (delimited by lines starting with `-`).
     let lines: Vec<&str> = body.lines().collect();
     for (i, line) in lines.iter().enumerate() {
         if line.trim() == "flavor: alpine-minirootfs" {
-            // Search forward for `file:` within the same YAML list entry
-            for j in i..lines.len().min(i + 10) {
-                let l = lines[j].trim();
-                if let Some(rest) = l.strip_prefix("file:") {
-                    return Ok(rest.trim().to_string());
+            let mut filename = None;
+            let mut sha256 = None;
+            for l in lines.iter().skip(i + 1) {
+                let l = l.trim();
+                // Stop at the next YAML list entry
+                if l.starts_with('-') {
+                    break;
                 }
+                if let Some(rest) = l.strip_prefix("file:") {
+                    filename = Some(rest.trim().to_string());
+                }
+                if let Some(rest) = l.strip_prefix("sha256:") {
+                    sha256 = Some(rest.trim().to_string());
+                }
+            }
+            match (filename, sha256) {
+                (Some(f), Some(s)) => return Ok((f, s)),
+                (Some(f), None) => return Ok((f, String::new())),
+                _ => {}
             }
         }
     }
@@ -101,7 +129,12 @@ fn fetch_minirootfs_filename(arch: &str) -> anyhow::Result<String> {
     )
 }
 
-fn download_and_extract(arch: &str, filename: &str, dest: &Path) -> anyhow::Result<()> {
+fn download_and_extract(
+    arch: &str,
+    filename: &str,
+    expected_sha256: &str,
+    dest: &Path,
+) -> anyhow::Result<()> {
     let url = format!(
         "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/{}/{}",
         arch, filename
@@ -113,7 +146,10 @@ fn download_and_extract(arch: &str, filename: &str, dest: &Path) -> anyhow::Resu
         .with_context(|| format!("Failed to start download from {}", url))?;
 
     if !response.status().is_success() {
-        bail!("Download failed: server returned HTTP {}", response.status());
+        bail!(
+            "Download failed: server returned HTTP {}",
+            response.status()
+        );
     }
 
     let total = response.content_length();
@@ -129,14 +165,31 @@ fn download_and_extract(arch: &str, filename: &str, dest: &Path) -> anyhow::Resu
         pb
     } else {
         let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::with_template("{spinner:.green} {bytes} downloaded").unwrap(),
-        );
+        pb.set_style(ProgressStyle::with_template("{spinner:.green} {bytes} downloaded").unwrap());
         pb
     };
 
-    let reader = pb.wrap_read(response);
-    let gz = GzDecoder::new(reader);
+    // Read the entire archive into memory (~4 MB) so we can verify the checksum
+    // before extracting.
+    let mut buf = Vec::new();
+    pb.wrap_read(response)
+        .read_to_end(&mut buf)
+        .context("Failed to read download")?;
+    pb.finish_with_message("Done");
+
+    if !expected_sha256.is_empty() {
+        let actual = format!("{:x}", Sha256::digest(&buf));
+        if actual != expected_sha256 {
+            bail!(
+                "SHA-256 mismatch for {}:\n  expected: {}\n  actual:   {}",
+                filename,
+                expected_sha256,
+                actual
+            );
+        }
+    }
+
+    let gz = GzDecoder::new(buf.as_slice());
     let mut archive = tar::Archive::new(gz);
     archive.set_preserve_permissions(true);
     archive.set_overwrite(true);
@@ -144,7 +197,6 @@ fn download_and_extract(arch: &str, filename: &str, dest: &Path) -> anyhow::Resu
         .unpack(dest)
         .with_context(|| format!("Failed to extract minirootfs to {}", dest.display()))?;
 
-    pb.finish_with_message("Done");
     Ok(())
 }
 
@@ -164,23 +216,16 @@ fn setup_jail(jailname: &str) -> anyhow::Result<PathBuf> {
     }
 
     eprintln!("Creating jail '{}' at {}", jailname, root.display());
-    fs::create_dir_all(&root)
-        .with_context(|| format!("Failed to create {}", root.display()))?;
+    fs::create_dir_all(&root).with_context(|| format!("Failed to create {}", root.display()))?;
 
     let arch = alpine_arch(std::env::consts::ARCH)?;
-    let filename = fetch_minirootfs_filename(arch)?;
-    download_and_extract(arch, &filename, &root)?;
+    let (filename, sha256) = fetch_minirootfs_info(arch)?;
+    download_and_extract(arch, &filename, &sha256, &root)?;
 
     // Ensure mount-target directories exist
     for dir in &["data", "proc", "dev", "dev/pts", "run", "tmp"] {
         fs::create_dir_all(root.join(dir))
             .with_context(|| format!("Failed to create {}/{}", root.display(), dir))?;
-    }
-
-    // Seed resolv.conf (overridden by bind mount at runtime)
-    if Path::new("/etc/resolv.conf").exists() {
-        fs::copy("/etc/resolv.conf", root.join("etc/resolv.conf"))
-            .context("Failed to copy /etc/resolv.conf into jail")?;
     }
 
     eprintln!("Jail '{}' ready.", jailname);
@@ -204,8 +249,14 @@ fn run_jail(root: &Path, command: &[String]) -> anyhow::Result<()> {
     // 2. Map real uid/gid → 0 inside the user namespace.
     //    setgroups must be denied before writing gid_map (kernel requirement).
     write_file("/proc/self/setgroups", b"deny")?;
-    write_file("/proc/self/uid_map", format!("0 {} 1\n", real_uid).as_bytes())?;
-    write_file("/proc/self/gid_map", format!("0 {} 1\n", real_gid).as_bytes())?;
+    write_file(
+        "/proc/self/uid_map",
+        format!("0 {} 1\n", real_uid).as_bytes(),
+    )?;
+    write_file(
+        "/proc/self/gid_map",
+        format!("0 {} 1\n", real_gid).as_bytes(),
+    )?;
 
     // 3. Fork so the child enters the new PID namespace (becomes PID 1 there).
     //    Safety: we are single-threaded at this point; no Rust runtime threads
@@ -267,8 +318,7 @@ fn jail_child(root: &Path, cwd: &Path, command: &[String]) -> anyhow::Result<()>
         let src = PathBuf::from("/dev").join(dev);
         let dst = root.join("dev").join(dev);
         if src.exists() {
-            fs::write(&dst, b"")
-                .with_context(|| format!("Failed to create {}", dst.display()))?;
+            fs::write(&dst, b"").with_context(|| format!("Failed to create {}", dst.display()))?;
             mount(
                 Some(&src),
                 &dst,
@@ -281,7 +331,7 @@ fn jail_child(root: &Path, cwd: &Path, command: &[String]) -> anyhow::Result<()>
     }
 
     let dev_pts = root.join("dev/pts");
-    fs::create_dir_all(&dev_pts).ok();
+    fs::create_dir_all(&dev_pts).context("Failed to create /dev/pts")?;
     mount(
         Some("devpts"),
         &dev_pts,
@@ -311,7 +361,7 @@ fn jail_child(root: &Path, cwd: &Path, command: &[String]) -> anyhow::Result<()>
     .context("Failed to mount /run")?;
 
     // 8. Bind-mount current working directory as /data
-    fs::create_dir_all(root.join("data")).ok();
+    fs::create_dir_all(root.join("data")).context("Failed to create /data mount target")?;
     mount(
         Some(cwd),
         &root.join("data"),
@@ -337,13 +387,17 @@ fn jail_child(root: &Path, cwd: &Path, command: &[String]) -> anyhow::Result<()>
     chroot(root).with_context(|| format!("chroot({}) failed", root.display()))?;
     std::env::set_current_dir("/data").context("chdir /data failed")?;
 
-    // 11. Set environment
+    // 11. Set environment — clear host vars, keep only what the jail needs.
+    let term = std::env::var("TERM").ok();
+    for (key, _) in std::env::vars_os() {
+        std::env::remove_var(&key);
+    }
     std::env::set_var("HOME", "/root");
     std::env::set_var(
         "PATH",
         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     );
-    if let Ok(term) = std::env::var("TERM") {
+    if let Some(term) = term {
         std::env::set_var("TERM", term);
     }
 
@@ -352,14 +406,15 @@ fn jail_child(root: &Path, cwd: &Path, command: &[String]) -> anyhow::Result<()>
     let c_prog = CString::new(command[0].as_str()).context("Command contains null byte")?;
     let c_args: Vec<CString> = command
         .iter()
-        .map(|s| CString::new(s.as_str()).expect("arg contains null byte"))
-        .collect();
+        .map(|s| CString::new(s.as_str()))
+        .collect::<Result<_, _>>()
+        .context("Argument contains null byte")?;
 
     match execvp(&c_prog, &c_args) {
         Err(nix::errno::Errno::ENOENT) => {
-            eprintln!("jj: '{}' not found, falling back to sh", command[0]);
+            eprintln!("ja: '{}' not found, falling back to sh", command[0]);
             let sh = CString::new("sh").unwrap();
-            execvp(&sh, &[sh.clone()]).context("exec sh failed")?;
+            execvp(&sh, std::slice::from_ref(&sh)).context("exec sh failed")?;
         }
         Err(e) => return Err(e).with_context(|| format!("exec '{}' failed", command[0])),
         Ok(_) => {}

@@ -1,5 +1,5 @@
 # Maintainer: your name <your@email.com>
-pkgname=jj-jailer
+pkgname=ja-jailer
 pkgver=0.1.0
 pkgrel=1
 pkgdesc='Run commands inside a persistent Alpine Linux jail using Linux namespaces (no root, no Docker)'
@@ -8,7 +8,7 @@ url='https://github.com/CodeSteak/jailer'
 license=('MIT')
 depends=()
 makedepends=('cargo')
-provides=('jj-jailer')
+provides=('ja-jailer')
 conflicts=()
 source=()
 sha256sums=()
@@ -20,6 +20,6 @@ build() {
 }
 
 package() {
-    install -Dm755 "$startdir/target/release/jj" "$pkgdir/usr/bin/jj"
+    install -Dm755 "$startdir/target/release/ja" "$pkgdir/usr/bin/ja"
     install -Dm644 "$startdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
 }
