@@ -13,7 +13,7 @@ use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{ForkResult, chroot, execvp, fork, getgid, getuid};
 
 #[derive(Parser, Debug)]
-#[command(name = "jailer", about = "Run commands inside an Alpine Linux jail")]
+#[command(name = "jj", about = "Run commands inside an Alpine Linux jail")]
 struct Args {
     /// Name of the jail (also the default command to run inside it)
     jailname: String,
@@ -345,7 +345,7 @@ fn jail_child(root: &Path, cwd: &Path, command: &[String]) -> anyhow::Result<()>
 
     match execvp(&c_prog, &c_args) {
         Err(nix::errno::Errno::ENOENT) => {
-            eprintln!("jailer: '{}' not found, falling back to sh", command[0]);
+            eprintln!("jj: '{}' not found, falling back to sh", command[0]);
             let sh = CString::new("sh").unwrap();
             execvp(&sh, &[sh.clone()]).context("exec sh failed")?;
         }
